@@ -1,0 +1,369 @@
+From 920cef9060253bc1deaf55b59f2108e01ac59003 Mon Sep 17 00:00:00 2001
+From: mrwigleg <ota3300@mail.ru>
+Date: Fri, 16 Sep 2016 22:39:59 +0300
+Subject: [PATCH] Patch
+
+---
+ src/java/android/telephony/SmsMessage.java         |  2 +-
+ .../android/internal/telephony/SMSDispatcher.java  | 59 +-------------
+ .../telephony/SubscriptionInfoUpdater.java         |  2 +-
+ .../telephony/dataconnection/DctController.java    |  7 +-
+ .../android/internal/telephony/gsm/GSMPhone.java   |  7 +-
+ .../internal/telephony/uicc/IccConstants.java      |  3 +
+ .../internal/telephony/uicc/IccFileHandler.java    | 91 +++++++---------------
+ .../internal/telephony/uicc/RuimRecords.java       |  7 +-
+ .../internal/telephony/uicc/SIMRecords.java        |  7 +-
+ 9 files changed, 54 insertions(+), 131 deletions(-)
+
+diff --git a/src/java/android/telephony/SmsMessage.java b/src/java/android/telephony/SmsMessage.java
+index bf04c3d..03676b7 100644
+--- a/src/java/android/telephony/SmsMessage.java
++++ b/src/java/android/telephony/SmsMessage.java
+@@ -609,7 +609,7 @@ public class SmsMessage {
+      * Returns the service centre timestamp in currentTimeMillis() format
+      */
+     public long getTimestampMillis() {
+-        return mWrappedSmsMessage != null ? mWrappedSmsMessage.getTimestampMillis() : 0;
++        return mWrappedSmsMessage.getTimestampMillis();
+     }
+ 
+     /**
+diff --git a/src/java/com/android/internal/telephony/SMSDispatcher.java b/src/java/com/android/internal/telephony/SMSDispatcher.java
+index be91fe0..e47fc2b 100644
+--- a/src/java/com/android/internal/telephony/SMSDispatcher.java
++++ b/src/java/com/android/internal/telephony/SMSDispatcher.java
+@@ -16,7 +16,6 @@
+ 
+ package com.android.internal.telephony;
+ import android.annotation.Nullable;
+-import android.annotation.NonNull;
+ import android.app.Activity;
+ import android.app.AlertDialog;
+ import android.app.PendingIntent;
+@@ -54,7 +53,6 @@ import android.telephony.ServiceState;
+ import android.telephony.TelephonyManager;
+ import android.text.Html;
+ import android.text.Spanned;
+-import android.text.TextPaint;
+ import android.text.TextUtils;
+ import android.util.EventLog;
+ import android.view.LayoutInflater;
+@@ -89,7 +87,6 @@ public abstract class SMSDispatcher extends Handler {
+     static final String TAG = "SMSDispatcher";    // accessed from inner class
+     static final boolean DBG = false;
+     private static final String SEND_NEXT_MSG_EXTRA = "SendNextMsg";
+-    private static final float MAX_LABEL_SIZE_PX = 500f;
+ 
+     /** Permission required to send SMS to short codes without user confirmation. */
+     private static final String SEND_RESPOND_VIA_MESSAGE_PERMISSION =
+@@ -1085,12 +1082,6 @@ public abstract class SMSDispatcher extends Handler {
+                 return true;    // not a premium short code
+             }
+ 
+-            // Do not allow any premium sms during SuW
+-            if (Settings.Global.getInt(mResolver, Settings.Global.DEVICE_PROVISIONED, 0) == 0) {
+-                Rlog.e(TAG, "Can't send premium sms during Setup Wizard");
+-                return false;
+-            }
+-
+             // Wait for user confirmation unless the user has set permission to always allow/deny
+             int premiumSmsPermission = mUsageMonitor.getPremiumSmsPermission(
+                     tracker.mAppInfo.packageName);
+@@ -1149,8 +1140,7 @@ public abstract class SMSDispatcher extends Handler {
+         PackageManager pm = mContext.getPackageManager();
+         try {
+             ApplicationInfo appInfo = pm.getApplicationInfo(appPackage, 0);
+-            String label = appInfo.loadLabel(pm).toString();
+-            return convertSafeLabel(label, appPackage);
++            return appInfo.loadLabel(pm);
+         } catch (PackageManager.NameNotFoundException e) {
+             Rlog.e(TAG, "PackageManager Name Not Found for package " + appPackage);
+             return appPackage;  // fall back to package name if we can't get app label
+@@ -1158,53 +1148,6 @@ public abstract class SMSDispatcher extends Handler {
+     }
+ 
+     /**
+-     * Check appLabel with the addition that the returned label is safe for being presented
+-     * in the UI since it will not contain new lines and the length will be limited to a
+-     * reasonable amount. This prevents a malicious party to influence UI
+-     * layout via the app label misleading the user into performing a
+-     * detrimental for them action. If the label is too long it will be
+-     * truncated and ellipsized at the end.
+-     *
+-     * @param label A string of appLabel from PackageItemInfo#loadLabel
+-     * @param appPackage the package name of the app requesting to send an SMS
+-     * @return Returns a CharSequence containing the item's label. If the
+-     * item does not have a label, its name is returned.
+-     */
+-    private CharSequence convertSafeLabel(@NonNull String labelStr, String appPackage) {
+-        // If the label contains new line characters it may push the UI
+-        // down to hide a part of it. Labels shouldn't have new line
+-        // characters, so just truncate at the first time one is seen.
+-        final int labelLength = labelStr.length();
+-        int offset = 0;
+-        while (offset < labelLength) {
+-            final int codePoint = labelStr.codePointAt(offset);
+-            final int type = Character.getType(codePoint);
+-            if (type == Character.LINE_SEPARATOR
+-                    || type == Character.CONTROL
+-                    || type == Character.PARAGRAPH_SEPARATOR) {
+-                labelStr = labelStr.substring(0, offset);
+-                break;
+-            }
+-            // replace all non-break space to " " in order to be trimmed
+-            if (type == Character.SPACE_SEPARATOR) {
+-                labelStr = labelStr.substring(0, offset) + " " + labelStr.substring(offset +
+-                        Character.charCount(codePoint));
+-            }
+-            offset += Character.charCount(codePoint);
+-        }
+-
+-        labelStr = labelStr.trim();
+-        if (labelStr.isEmpty()) {
+-            return appPackage;
+-        }
+-        TextPaint paint = new TextPaint();
+-        paint.setTextSize(42);
+-
+-        return TextUtils.ellipsize(labelStr, paint, MAX_LABEL_SIZE_PX,
+-                TextUtils.TruncateAt.END);
+-    }
+-
+-    /**
+      * Post an alert when SMS needs confirmation due to excessive usage.
+      * @param tracker an SmsTracker for the current message.
+      */
+diff --git a/src/java/com/android/internal/telephony/SubscriptionInfoUpdater.java b/src/java/com/android/internal/telephony/SubscriptionInfoUpdater.java
+index e4987c7..e0ef461 100644
+--- a/src/java/com/android/internal/telephony/SubscriptionInfoUpdater.java
++++ b/src/java/com/android/internal/telephony/SubscriptionInfoUpdater.java
+@@ -309,7 +309,7 @@ public class SubscriptionInfoUpdater extends Handler {
+                         mIccId[slotId] = ICCID_STRING_FOR_NO_SIM;
+                     }
+                 } else {
+-                    mIccId[slotId] = ICCID_STRING_FOR_NO_SIM;
++                    mIccId[slotId] = IccConstants.FAKE_ICCID;
+                     logd("Query IccId fail: " + ar.exception);
+                 }
+                 logd("sIccId[" + slotId + "] = " + mIccId[slotId]);
+diff --git a/src/java/com/android/internal/telephony/dataconnection/DctController.java b/src/java/com/android/internal/telephony/dataconnection/DctController.java
+index 4db2343..c630cb6 100644
+--- a/src/java/com/android/internal/telephony/dataconnection/DctController.java
++++ b/src/java/com/android/internal/telephony/dataconnection/DctController.java
+@@ -406,7 +406,12 @@ public class DctController extends Handler {
+                 + ", activePhoneId=" + activePhoneId);
+ 
+         if (requestedPhoneId == INVALID_PHONE_INDEX) {
+-            // we have no network request - don't bother with this
++            // either we have no network request
++            // or there is no valid subscription at the moment
++            if (activePhoneId != INVALID_PHONE_INDEX) {
++                // detatch so we can try connecting later
++                mDcSwitchAsyncChannel[activePhoneId].disconnectAll();
++            }
+             return;
+         }
+ 
+diff --git a/src/java/com/android/internal/telephony/gsm/GSMPhone.java b/src/java/com/android/internal/telephony/gsm/GSMPhone.java
+index e2624da..183e445 100644
+--- a/src/java/com/android/internal/telephony/gsm/GSMPhone.java
++++ b/src/java/com/android/internal/telephony/gsm/GSMPhone.java
+@@ -1514,7 +1514,12 @@ public class GSMPhone extends PhoneBase {
+             // Complete pending USSD
+ 
+             if (isUssdRelease) {
+-                found.onUssdRelease();
++                // MTK weirdness
++                if(ussdMessage != null) {
++                    found.onUssdFinished(ussdMessage, isUssdRequest);
++                } else {
++                    found.onUssdRelease();
++                }
+             } else if (isUssdError) {
+                 found.onUssdFinishedError();
+             } else {
+diff --git a/src/java/com/android/internal/telephony/uicc/IccConstants.java b/src/java/com/android/internal/telephony/uicc/IccConstants.java
+index d395fc1..6a2c632 100644
+--- a/src/java/com/android/internal/telephony/uicc/IccConstants.java
++++ b/src/java/com/android/internal/telephony/uicc/IccConstants.java
+@@ -107,4 +107,7 @@ public interface IccConstants {
+ 
+     //UICC access
+     static final String DF_ADF = "7FFF";
++
++    //CM-Specific : Fake ICCID
++    static final String FAKE_ICCID = "00000000000001";
+ }
+diff --git a/src/java/com/android/internal/telephony/uicc/IccFileHandler.java b/src/java/com/android/internal/telephony/uicc/IccFileHandler.java
+index 22d0dfe..a84eb46 100644
+--- a/src/java/com/android/internal/telephony/uicc/IccFileHandler.java
++++ b/src/java/com/android/internal/telephony/uicc/IccFileHandler.java
+@@ -359,7 +359,7 @@ public abstract class IccFileHandler extends Handler implements IccConstants {
+                         fileid, 0, onLoaded);
+ 
+         mCi.iccIOForApp(COMMAND_GET_RESPONSE, fileid, getEFPath(fileid),
+-                        0, 0, 0, null, null, mAid, response);
++                        0, 0, GET_RESPONSE_EF_SIZE_BYTES, null, null, mAid, response);
+     }
+ 
+     /**
+@@ -538,30 +538,17 @@ public abstract class IccFileHandler extends Handler implements IccConstants {
+ 
+                 data = result.payload;
+ 
+-                if (UiccTlvData.isUiccTlvData(data)) {
+-                    UiccTlvData tlvData = UiccTlvData.parse(data);
+-
+-                    if (tlvData.isIncomplete()) {
+-                        throw new IccFileTypeMismatch();
+-                    }
+-
+-                    recordSize = new int[3];
+-                    recordSize[0] = tlvData.mRecordSize;
+-                    recordSize[1] = tlvData.mFileSize;
+-                    recordSize[2] = tlvData.mNumRecords;
+-                } else {
+-                    if (TYPE_EF != data[RESPONSE_DATA_FILE_TYPE] ||
+-                        EF_TYPE_LINEAR_FIXED != data[RESPONSE_DATA_STRUCTURE]) {
+-                        throw new IccFileTypeMismatch();
+-                    }
+-
+-                    recordSize = new int[3];
+-                    recordSize[0] = data[RESPONSE_DATA_RECORD_LENGTH] & 0xFF;
+-                    recordSize[1] = ((data[RESPONSE_DATA_FILE_SIZE_1] & 0xff) << 8)
+-                           + (data[RESPONSE_DATA_FILE_SIZE_2] & 0xff);
+-                    recordSize[2] = recordSize[1] / recordSize[0];
++                if (TYPE_EF != data[RESPONSE_DATA_FILE_TYPE] ||
++                    EF_TYPE_LINEAR_FIXED != data[RESPONSE_DATA_STRUCTURE]) {
++                    throw new IccFileTypeMismatch();
+                 }
+ 
++                recordSize = new int[3];
++                recordSize[0] = data[RESPONSE_DATA_RECORD_LENGTH] & 0xFF;
++                recordSize[1] = ((data[RESPONSE_DATA_FILE_SIZE_1] & 0xff) << 8)
++                       + (data[RESPONSE_DATA_FILE_SIZE_2] & 0xff);
++                recordSize[2] = recordSize[1] / recordSize[0];
++
+                 sendResult(response, recordSize, null);
+                 break;
+ 
+@@ -579,32 +566,20 @@ public abstract class IccFileHandler extends Handler implements IccConstants {
+                 data = result.payload;
+                 path = lc.mPath;
+ 
+-                if (UiccTlvData.isUiccTlvData(data)) {
+-                    UiccTlvData tlvData = UiccTlvData.parse(data);
+-
+-                    if (tlvData.isIncomplete()) {
+-                        throw new IccFileTypeMismatch();
+-                    }
+-
+-                    lc.mRecordSize = tlvData.mRecordSize;
+-                    lc.mCountRecords = tlvData.mNumRecords;
+-                    size = tlvData.mFileSize;
+-                } else {
+-                    if (TYPE_EF != data[RESPONSE_DATA_FILE_TYPE]) {
+-                        throw new IccFileTypeMismatch();
+-                    }
++                if (TYPE_EF != data[RESPONSE_DATA_FILE_TYPE]) {
++                    throw new IccFileTypeMismatch();
++                }
+ 
+-                    if (EF_TYPE_LINEAR_FIXED != data[RESPONSE_DATA_STRUCTURE]) {
+-                        throw new IccFileTypeMismatch();
+-                    }
++                if (EF_TYPE_LINEAR_FIXED != data[RESPONSE_DATA_STRUCTURE]) {
++                    throw new IccFileTypeMismatch();
++                }
+ 
+-                    lc.mRecordSize = data[RESPONSE_DATA_RECORD_LENGTH] & 0xFF;
++                lc.mRecordSize = data[RESPONSE_DATA_RECORD_LENGTH] & 0xFF;
+ 
+-                    size = ((data[RESPONSE_DATA_FILE_SIZE_1] & 0xff) << 8)
+-                           + (data[RESPONSE_DATA_FILE_SIZE_2] & 0xff);
++                size = ((data[RESPONSE_DATA_FILE_SIZE_1] & 0xff) << 8)
++                       + (data[RESPONSE_DATA_FILE_SIZE_2] & 0xff);
+ 
+-                    lc.mCountRecords = size / lc.mRecordSize;
+-                }
++                lc.mCountRecords = size / lc.mRecordSize;
+ 
+                  if (lc.mLoadAll) {
+                      lc.results = new ArrayList<byte[]>(lc.mCountRecords);
+@@ -634,27 +609,17 @@ public abstract class IccFileHandler extends Handler implements IccConstants {
+ 
+                 fileid = msg.arg1;
+ 
+-                if (UiccTlvData.isUiccTlvData(data)) {
+-                    UiccTlvData tlvData = UiccTlvData.parse(data);
+-
+-                    if (tlvData.mFileSize < 0) {
+-                        throw new IccFileTypeMismatch();
+-                    }
+-
+-                    size = tlvData.mFileSize;
+-                } else {
+-                    if (TYPE_EF != data[RESPONSE_DATA_FILE_TYPE]) {
+-                        throw new IccFileTypeMismatch();
+-                    }
+-
+-                    if (EF_TYPE_TRANSPARENT != data[RESPONSE_DATA_STRUCTURE]) {
+-                        throw new IccFileTypeMismatch();
+-                    }
++                if (TYPE_EF != data[RESPONSE_DATA_FILE_TYPE]) {
++                    throw new IccFileTypeMismatch();
++                }
+ 
+-                    size = ((data[RESPONSE_DATA_FILE_SIZE_1] & 0xff) << 8)
+-                           + (data[RESPONSE_DATA_FILE_SIZE_2] & 0xff);
++                if (EF_TYPE_TRANSPARENT != data[RESPONSE_DATA_STRUCTURE]) {
++                    throw new IccFileTypeMismatch();
+                 }
+ 
++                size = ((data[RESPONSE_DATA_FILE_SIZE_1] & 0xff) << 8)
++                       + (data[RESPONSE_DATA_FILE_SIZE_2] & 0xff);
++
+                 mCi.iccIOForApp(COMMAND_READ_BINARY, fileid, getEFPath(fileid),
+                                 0, 0, size, null, null, mAid,
+                                 obtainMessage(EVENT_READ_BINARY_DONE,
+diff --git a/src/java/com/android/internal/telephony/uicc/RuimRecords.java b/src/java/com/android/internal/telephony/uicc/RuimRecords.java
+index d348c81..8e5f4ab 100644
+--- a/src/java/com/android/internal/telephony/uicc/RuimRecords.java
++++ b/src/java/com/android/internal/telephony/uicc/RuimRecords.java
+@@ -690,10 +690,11 @@ public final class RuimRecords extends IccRecords {
+                 data = (byte[])ar.result;
+ 
+                 if (ar.exception != null) {
+-                    break;
++                    mIccId = FAKE_ICCID;
++                }
++                else {
++                    mIccId = IccUtils.bcdToString(data, 0, data.length);
+                 }
+-
+-                mIccId = IccUtils.bcdToString(data, 0, data.length);
+ 
+                 log("iccid: " + mIccId);
+ 
+diff --git a/src/java/com/android/internal/telephony/uicc/SIMRecords.java b/src/java/com/android/internal/telephony/uicc/SIMRecords.java
+index 8b6f743..100abd7 100644
+--- a/src/java/com/android/internal/telephony/uicc/SIMRecords.java
++++ b/src/java/com/android/internal/telephony/uicc/SIMRecords.java
+@@ -874,10 +874,11 @@ public class SIMRecords extends IccRecords {
+                 data = (byte[])ar.result;
+ 
+                 if (ar.exception != null) {
+-                    break;
++                    mIccId = FAKE_ICCID;
++                }
++                else {
++                    mIccId = IccUtils.bcdToString(data, 0, data.length);
+                 }
+-
+-                mIccId = IccUtils.bcdToString(data, 0, data.length);
+ 
+                 log("iccid: " + mIccId);
+ 
+-- 
+2.7.4
+

@@ -1,0 +1,355 @@
+From d119d001bf84c3f3711f862057146a239c6731cd Mon Sep 17 00:00:00 2001
+From: mrwigleg <ota3300@mail.ru>
+Date: Fri, 16 Sep 2016 22:20:37 +0300
+Subject: [PATCH] Patch
+
+---
+ Android.mk        |  1 -
+ app.te            |  4 +---
+ attributes        |  3 ---
+ bluetooth.te      |  3 +--
+ domain.te         |  8 +++-----
+ file.te           |  2 --
+ genfs_contexts    |  2 --
+ init.te           | 14 +-------------
+ isolated_app.te   |  2 +-
+ logd.te           |  2 --
+ mediaserver.te    |  3 ---
+ net.te            |  2 +-
+ property_contexts |  1 -
+ shell.te          |  2 +-
+ su.te             |  4 ----
+ system_server.te  |  4 ----
+ te_macros         |  2 +-
+ untrusted_app.te  |  3 ---
+ zygote.te         |  1 -
+ 19 files changed, 10 insertions(+), 53 deletions(-)
+
+diff --git a/Android.mk b/Android.mk
+index 6873d07..e7b1bd4 100644
+--- a/Android.mk
++++ b/Android.mk
+@@ -51,7 +51,6 @@ sepolicy_build_files := security_classes \
+                         policy_capabilities \
+                         te_macros \
+                         attributes \
+-                        ioctl_macros \
+                         *.te \
+                         roles \
+                         users \
+diff --git a/app.te b/app.te
+index 62bc07f..40de074 100644
+--- a/app.te
++++ b/app.te
+@@ -145,8 +145,6 @@ allow appdomain mnt_user_file:lnk_file r_file_perms;
+ # Read/write visible storage
+ allow appdomain fuse:dir create_dir_perms;
+ allow appdomain fuse:file create_file_perms;
+-allow appdomain sdcardfs:dir create_dir_perms;
+-allow appdomain sdcardfs:file create_file_perms;
+ 
+ # Access OBBs (vfat images) mounted by vold (b/17633509)
+ # File write access allowed for FDs returned through Storage Access Framework
+@@ -364,7 +362,7 @@ neverallow { appdomain -system_app -shell }
+ 
+ # Ability to perform any filesystem operation other than statfs(2).
+ # i.e. no mount(2), unmount(2), etc.
+-neverallow appdomain -sudaemon fs_type:filesystem ~getattr;
++neverallow appdomain fs_type:filesystem ~getattr;
+ 
+ # Ability to set system properties.
+ neverallow { appdomain -system_app -radio -shell -bluetooth -nfc }
+diff --git a/attributes b/attributes
+index bf04102..e42edd6 100644
+--- a/attributes
++++ b/attributes
+@@ -73,6 +73,3 @@ attribute bluetoothdomain;
+ 
+ # All domains used for binder service domains.
+ attribute binderservicedomain;
+-
+-# All domains used for tad service.
+-attribute tad_placeholder;
+diff --git a/bluetooth.te b/bluetooth.te
+index 816fcb3..338f2b2 100644
+--- a/bluetooth.te
++++ b/bluetooth.te
+@@ -25,8 +25,7 @@ allow bluetooth { tun_device uhid_device hci_attach_dev }:chr_file rw_file_perms
+ # TODO: This should no longer be needed with bluedroid for bluetooth
+ # but may be getting used for other non-bluetooth sockets that has no
+ # specific class defined.  Consider taking to specific domains.
+-allow { bluetoothdomain -untrusted_app -isolated_app -shell } self:socket create_socket_perms;
+-neverallow { untrusted_app isolated_app shell } { untrusted_app isolated_app shell }:socket *;
++allow bluetoothdomain self:socket create_socket_perms;
+ 
+ # sysfs access.
+ allow bluetooth sysfs_bluetooth_writable:file rw_file_perms;
+diff --git a/domain.te b/domain.te
+index 4d81d8b..b6eeb2e 100644
+--- a/domain.te
++++ b/domain.te
+@@ -35,7 +35,6 @@ allow domain self:lnk_file r_file_perms;
+ allow domain self:{ fifo_file file } rw_file_perms;
+ allow domain self:unix_dgram_socket { create_socket_perms sendto };
+ allow domain self:unix_stream_socket { create_stream_socket_perms connectto };
+-allow domain domain:{ unix_dgram_socket unix_stream_socket } unpriv_unix_sock_ioctls;
+ 
+ # Inherit or receive open files from others.
+ allow domain init:fd use;
+@@ -272,7 +271,7 @@ neverallow domain init:binder *;
+ 
+ # Don't allow raw read/write/open access to block_device
+ # Rather force a relabel to a more specific type
+-neverallow { domain -kernel -init -recovery -vold -uncrypt -tad_placeholder } block_device:blk_file { open read write };
++neverallow { domain -kernel -init -recovery -vold -uncrypt } block_device:blk_file { open read write };
+ 
+ # Don't allow raw read/write/open access to generic devices.
+ # Rather force a relabel to a more specific type.
+@@ -283,7 +282,7 @@ neverallow { domain -init -ueventd } device:chr_file { open read write };
+ # Limit what domains can mount filesystems or change their mount flags.
+ # sdcard_type / vfat is exempt as a larger set of domains need
+ # this capability, including device-specific domains.
+-neverallow { domain -kernel -init -recovery -zygote -vold -sudaemon  } { fs_type -sdcard_type }:filesystem { mount remount relabelfrom relabelto };
++neverallow { domain -kernel -init -recovery -vold -zygote } { fs_type -sdcard_type }:filesystem { mount remount relabelfrom relabelto };
+ 
+ #
+ # Assert that, to the extent possible, we're not loading executable content from
+@@ -293,7 +292,6 @@ neverallow {
+     domain
+     -appdomain
+     -dumpstate
+-    -mediaserver
+     -shell
+     userdebug_or_eng(`-su')
+     -system_server
+@@ -402,7 +400,7 @@ neverallow domain { file_type fs_type dev_type }:{ lnk_file fifo_file sock_file
+ # Nobody should be able to execute su on user builds.
+ # On userdebug/eng builds, only dumpstate, shell, and
+ # su itself execute su.
+-neverallow { domain userdebug_or_eng(`-dumpstate -shell -su -init -untrusted_app -system_app -sudaemon') } su_exec:file no_x_file_perms;
++neverallow { domain userdebug_or_eng(`-dumpstate -shell -su -init -untrusted_app -sudaemon') } su_exec:file no_x_file_perms;
+ 
+ # Do not allow the introduction of new execmod rules. Text relocations
+ # and modification of executable pages are unsafe.
+diff --git a/file.te b/file.te
+index 779517c..0bac206 100644
+--- a/file.te
++++ b/file.te
+@@ -24,7 +24,6 @@ type sysfs_writable, fs_type, sysfs_type, mlstrustedobject;
+ type sysfs_bluetooth_writable, fs_type, sysfs_type, mlstrustedobject;
+ type sysfs_nfc_power_writable, fs_type, sysfs_type, mlstrustedobject;
+ type sysfs_wake_lock, fs_type, sysfs_type;
+-type configfs, fs_type;
+ # /sys/devices/system/cpu
+ type sysfs_devices_system_cpu, fs_type, sysfs_type;
+ # /sys/module/lowmemorykiller
+@@ -35,7 +34,6 @@ type tmpfs, fs_type;
+ type shm, fs_type;
+ type mqueue, fs_type;
+ type fuse, sdcard_type, fs_type, mlstrustedobject;
+-type sdcardfs, sdcard_type, fs_type, mlstrustedobject;
+ type vfat, sdcard_type, fs_type, mlstrustedobject;
+ ifelse(shipping_build, `true',
+   # Dummy this out in shipping to avoid breaking code mentioning the label
+diff --git a/genfs_contexts b/genfs_contexts
+index 3aac306..0bbf97f 100644
+--- a/genfs_contexts
++++ b/genfs_contexts
+@@ -34,8 +34,6 @@ genfscon inotifyfs / u:object_r:inotify:s0
+ genfscon vfat / u:object_r:vfat:s0
+ genfscon debugfs / u:object_r:debugfs:s0
+ genfscon fuse / u:object_r:fuse:s0
+-genfscon configfs / u:object_r:configfs:s0
+-genfscon sdcardfs / u:object_r:sdcardfs:s0
+ genfscon pstore / u:object_r:pstorefs:s0
+ genfscon functionfs / u:object_r:functionfs:s0
+ genfscon usbfs / u:object_r:usbfs:s0
+diff --git a/init.te b/init.te
+index c56b46b..a9c567e 100644
+--- a/init.te
++++ b/init.te
+@@ -60,10 +60,6 @@ allow init tmpfs:dir mounton;
+ allow init cgroup:dir create_dir_perms;
+ allow init cpuctl_device:dir { create mounton };
+ 
+-# /config
+-allow init configfs:dir mounton;
+-allow init configfs:dir create_dir_perms;
+-
+ # Use tmpfs as /data, used for booting when /data is encrypted
+ allow init tmpfs:dir relabelfrom;
+ 
+@@ -75,10 +71,6 @@ allow init self:capability sys_time;
+ 
+ allow init self:capability { sys_rawio mknod };
+ 
+-# fix some selinux denials related to supersu
+-allow init system_file:file execute_no_trans;
+-allow zygote init:unix_stream_socket { read write };
+-
+ # Mounting filesystems from block devices.
+ allow init dev_type:blk_file r_file_perms;
+ 
+@@ -135,10 +127,6 @@ allow init security_file:dir { create setattr };
+ # which can be configured on a device-by-device basis if needed.
+ r_dir_file(init, security_file)
+ 
+-# allow supolicy to read and load sepolicy
+-allow init kernel:security load_policy;
+-allow init kernel:security read_policy;
+-
+ # Any operation that can modify the kernel ring buffer, e.g. clear
+ # or a read that consumes the messages that were read.
+ allow init kernel:system syslog_mod;
+@@ -299,4 +287,4 @@ neverallow init shell_data_file:lnk_file read;
+ neverallow init app_data_file:lnk_file read;
+ 
+ # init should never execute a program without changing to another domain.
+-# neverallow init { file_type fs_type }:file execute_no_trans;
++neverallow init { file_type fs_type }:file execute_no_trans;
+diff --git a/isolated_app.te b/isolated_app.te
+index 535e5de..a4163f2 100644
+--- a/isolated_app.te
++++ b/isolated_app.te
+@@ -19,7 +19,7 @@ allow isolated_app activity_service:service_manager find;
+ allow isolated_app display_service:service_manager find;
+ 
+ # only allow unprivileged socket ioctl commands
+-allow isolated_app domain:{ rawip_socket tcp_socket udp_socket } unpriv_sock_ioctls;
++# allow isolated_app self:{ rawip_socket tcp_socket udp_socket } unpriv_sock_ioctls;
+ 
+ #####
+ ##### Neverallow
+diff --git a/logd.te b/logd.te
+index 54bb465..b0d978f 100644
+--- a/logd.te
++++ b/logd.te
+@@ -17,9 +17,7 @@ allow logd pstorefs:file r_file_perms;
+ 
+ r_dir_file(logd, domain)
+ 
+-allow logd init:fifo_file { read write };
+ allow logd kernel:system syslog_mod;
+-allow logd fuse:file { write };
+ 
+ control_logd(logd)
+ 
+diff --git a/mediaserver.te b/mediaserver.te
+index 60f3efa..bc942f3 100644
+--- a/mediaserver.te
++++ b/mediaserver.te
+@@ -107,6 +107,3 @@ allow mediaserver drmserver:drmservice {
+     finalizeDecryptUnit
+     pread
+ };
+-
+-# Allow ViPER4Android in enforcing mode.
+-allow mediaserver mediaserver_tmpfs:file { read write execute };
+diff --git a/net.te b/net.te
+index 4616eb1..6aa12f2 100644
+--- a/net.te
++++ b/net.te
+@@ -13,7 +13,7 @@ allow netdomain node_type:{ tcp_socket udp_socket } node_bind;
+ allow netdomain port_type:udp_socket name_bind;
+ allow netdomain port_type:tcp_socket name_bind;
+ # See changes to the routing table.
+-allow netdomain self:netlink_route_socket { create read getattr write setattr lock append bind connect getopt setopt shutdown nlmsg_read };
++allow netdomain self:netlink_route_socket { create_socket_perms nlmsg_read };
+ 
+ # Talks to netd via dnsproxyd socket.
+ unix_socket_connect(netdomain, dnsproxyd, netd)
+diff --git a/property_contexts b/property_contexts
+index a724516..5bdb3c3 100644
+--- a/property_contexts
++++ b/property_contexts
+@@ -30,7 +30,6 @@ bluetooth.              u:object_r:bluetooth_prop:s0
+ debug.                  u:object_r:debug_prop:s0
+ debug.db.               u:object_r:debuggerd_prop:s0
+ log.                    u:object_r:shell_prop:s0
+-security.perf_harden    u:object_r:shell_prop:s0
+ service.adb.root        u:object_r:shell_prop:s0
+ service.adb.tcp.port    u:object_r:shell_prop:s0
+ 
+diff --git a/shell.te b/shell.te
+index 4b4093d..a14328c 100644
+--- a/shell.te
++++ b/shell.te
+@@ -78,7 +78,7 @@ allow shell bootchart_data_file:dir rw_dir_perms;
+ allow shell bootchart_data_file:file create_file_perms;
+ 
+ # only allow unprivileged socket ioctl commands
+-allow shell self:{ rawip_socket tcp_socket udp_socket } unpriv_sock_ioctls;
++# allow shell self:{ rawip_socket tcp_socket udp_socket } unpriv_sock_ioctls;
+ 
+ # Do not allow shell to hard link to any files.
+ # In particular, if shell hard links to app data
+diff --git a/su.te b/su.te
+index 8edafa0..d135459 100644
+--- a/su.te
++++ b/su.te
+@@ -51,8 +51,4 @@ userdebug_or_eng(`
+   dontaudit su domain:debuggerd *;
+   dontaudit su domain:drmservice *;
+   dontaudit su unlabeled:filesystem *;
+-
+-  # Remount the F.. system and run with it
+-  allow sudaemon labeledfs:filesystem remount; 
+-
+ ')
+diff --git a/system_server.te b/system_server.te
+index b81a37c..a25ab21 100644
+--- a/system_server.te
++++ b/system_server.te
+@@ -442,10 +442,6 @@ allow system_server mnt_expand_file:dir r_dir_perms;
+ allow system_server fingerprintd_data_file:dir { r_dir_perms remove_name rmdir relabelto write };
+ allow system_server fingerprintd_data_file:file { getattr unlink };
+ 
+-# For configuring sdcardfs
+-allow system_server configfs:dir { create_dir_perms };
+-allow system_server configfs:file { getattr open unlink write };
+-
+ ###
+ ### Neverallow rules
+ ###
+diff --git a/te_macros b/te_macros
+index cae44e1..70b1883 100644
+--- a/te_macros
++++ b/te_macros
+@@ -202,7 +202,7 @@ allow $1 self:capability2 block_suspend;
+ define(`selinux_check_access', `
+ allow $1 selinuxfs:file rw_file_perms;
+ allow $1 kernel:security compute_av;
+-allow $1 self:netlink_selinux_socket { read write create getattr setattr lock relabelfrom relabelto append bind connect listen accept getopt setopt shutdown recvfrom sendto recv_msg send_msg name_bind };
++allow $1 self:netlink_selinux_socket *;
+ ')
+ 
+ #####################################
+diff --git a/untrusted_app.te b/untrusted_app.te
+index a17943f..1ab18c3 100644
+--- a/untrusted_app.te
++++ b/untrusted_app.te
+@@ -101,9 +101,6 @@ allow untrusted_app persistent_data_block_service:service_manager find;
+ allow untrusted_app { apk_tmp_file apk_private_tmp_file }:dir r_dir_perms;
+ allow untrusted_app { apk_tmp_file apk_private_tmp_file }:file r_file_perms;
+ 
+-# only allow unprivileged socket ioctl commands
+-allow untrusted_app domain:{ rawip_socket tcp_socket udp_socket } unpriv_sock_ioctls;
+-
+ # Allow GMS core to access perfprofd output, which is stored
+ # in /data/misc/perfprofd/. GMS core will need to list all
+ # data stored in that directory to process them one by one.
+diff --git a/zygote.te b/zygote.te
+index 66c345a..7029344 100644
+--- a/zygote.te
++++ b/zygote.te
+@@ -56,7 +56,6 @@ allow zygote tmpfs:dir { write create add_name setattr mounton search }; # TODO:
+ allow zygote tmpfs:filesystem { mount unmount };
+ allow zygote fuse:filesystem { unmount };
+ allow zygote labeledfs:filesystem remount; # TODO: deprecated in M
+-allow zygote sdcardfs:filesystem { unmount };
+ 
+ # Allowed to create user-specific storage source if started before vold
+ allow zygote mnt_user_file:dir create_dir_perms;
+-- 
+2.7.4
+

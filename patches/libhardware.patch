@@ -1,0 +1,236 @@
+From cb33e0d47ccba80471935a2b2fff70cacc826492 Mon Sep 17 00:00:00 2001
+From: mrwigleg <ota3300@mail.ru>
+Date: Sat, 17 Sep 2016 20:14:32 +0300
+Subject: [PATCH] Patch
+
+---
+ include/hardware/gps.h            | 49 +++++++++++++++++++++++++++++++++++++++
+ include/hardware/keymaster1.h     | 49 ---------------------------------------
+ include/hardware/keymaster_defs.h | 40 ++++++++++++++++----------------
+ modules/sensors/multihal.cpp      |  6 ++---
+ 4 files changed, 72 insertions(+), 72 deletions(-)
+
+diff --git a/include/hardware/gps.h b/include/hardware/gps.h
+index 76b6cb7..704ed1a 100644
+--- a/include/hardware/gps.h
++++ b/include/hardware/gps.h
+@@ -37,6 +37,9 @@ __BEGIN_DECLS
+ /** Milliseconds since January 1, 1970 */
+ typedef int64_t GpsUtcTime;
+ 
++/** Maximum number of GNSS SVs for gps_sv_status_callback(). */
++#define GNSS_MAX_SVS 256
++
+ /** Maximum number of SVs for gps_sv_status_callback(). */
+ #define GPS_MAX_SVS 32
+ 
+@@ -471,6 +474,33 @@ typedef struct {
+     float   azimuth;
+ } GpsSvInfo;
+ 
++
++/** Represents GNSS SV information. */
++typedef struct {
++    /** set to sizeof(GnssSvInfo) */
++    size_t          size;
++    /** Pseudo-random number for the SV. */
++    int     prn;
++    /** Signal to noise ratio. */
++    float   snr;
++    /** Elevation of SV in degrees. */
++    float   elevation;
++    /** Azimuth of SV in degrees. */
++    float   azimuth;
++    /**
++     * SVs have ephemeris data.
++     */
++    bool has_ephemeris;
++    /**
++     * SVs have almanac data.
++     */
++    bool has_almanac;
++    /**
++     * SVs were used for computing the most recent position fix.
++     */
++    bool used_in_fix;
++} GnssSvInfo;
++
+ /** Represents SV status. */
+ typedef struct {
+     /** set to sizeof(GpsSvStatus) */
+@@ -500,6 +530,18 @@ typedef struct {
+ } GpsSvStatus;
+ 
+ 
++/** Represents GNSS SV status. */
++typedef struct {
++    /** set to sizeof(GnssSvStatus) */
++    size_t          size;
++
++    /** Number of SVs currently visible. */
++    int         num_svs;
++
++    /** Contains an array of GNSS SV information. */
++    GnssSvInfo   sv_list[GNSS_MAX_SVS];
++} GnssSvStatus;
++
+ /* 2G and 3G */
+ /* In 3G lac is discarded */
+ typedef struct {
+@@ -539,6 +581,12 @@ typedef void (* gps_status_callback)(GpsStatus* status);
+  */
+ typedef void (* gps_sv_status_callback)(GpsSvStatus* sv_info);
+ 
++/**
++ * Callback with GNSS SV status information.
++ * Can only be called from a thread created by create_thread_cb.
++ */
++typedef void (* gnss_sv_status_callback)(GnssSvStatus* sv_info);
++
+ /** Callback for reporting NMEA sentences.
+  *  Can only be called from a thread created by create_thread_cb.
+  */
+@@ -572,6 +620,7 @@ typedef struct {
+     gps_location_callback location_cb;
+     gps_status_callback status_cb;
+     gps_sv_status_callback sv_status_cb;
++    gnss_sv_status_callback gnss_sv_status_cb;
+     gps_nmea_callback nmea_cb;
+     gps_set_capabilities set_capabilities_cb;
+     gps_acquire_wakelock acquire_wakelock_cb;
+diff --git a/include/hardware/keymaster1.h b/include/hardware/keymaster1.h
+index ac2cc2b..afd202c 100644
+--- a/include/hardware/keymaster1.h
++++ b/include/hardware/keymaster1.h
+@@ -530,55 +530,6 @@ struct keymaster1_device {
+      */
+     keymaster_error_t (*abort)(const struct keymaster1_device* dev,
+                                keymaster_operation_handle_t operation_handle);
+-
+-    /**
+-     * Generates a pair of ATTK defined in SOTER. Save the private key into RPMB.
+-     * Note that the ATTK generated will never be touched outside the keymaster.
+-     *
+-     * \param[in] dev The keymaster device structure.
+-     *
+-     * \param[in] copy_num The number of copies that will be saved in the RPMB.
+-     */
+-    keymaster_error_t (*generate_attk_key_pair)(const struct keymaster1_device* dev,
+-                                                const uint8_t copy_num);
+-
+-    /**
+-     * Verify the existance ATTK defined in SOTER.
+-     *
+-     * \param[in] dev The keymaster device structure.
+-     *
+-     * Returns: 0 if the ATTK exists.
+-     */
+-    keymaster_error_t (*verify_attk_key_pair)(const struct keymaster1_device* dev);
+-
+-    /**
+-     * Export the public key of ATTK in PEM format.
+-     *
+-     * \param[in] dev The keymaster device structure.
+-     *
+-     * \param[out] pub_key_data The public key data in X.509v3 format PEM encoded
+-     *
+-     * \param[out] pub_key_data_length The length of the public key data.
+-     */
+-    keymaster_error_t (*export_attk_public_key)(const struct keymaster1_device* dev,
+-                                                const uint8_t* pub_key_data,
+-                                                const size_t pub_key_data_length);
+-
+-    /**
+-     * Get Unique device ID.
+-     *
+-     * \param[in] dev The keymaster device structure.
+-     *
+-     * \param[out] device_id The unique id for each device, format as below:
+-     * 1.bytes 0-3: Identify each silicon provider id.
+-     * 2.bytes 4-7: SoC model ID, defined by each silicon provider
+-     * 3.bytes 8-15: Public Chip Serial *Number of SoC, defined by each silicon provider
+-     *
+-     * \param[out] device_id_length The length of the device id.
+-     */
+-    keymaster_error_t (*get_device_id)(const struct keymaster1_device* dev,
+-                                                const uint8_t* device_id,
+-                                                const size_t device_id_length);
+ };
+ typedef struct keymaster1_device keymaster1_device_t;
+ 
+diff --git a/include/hardware/keymaster_defs.h b/include/hardware/keymaster_defs.h
+index 1a723c9..cce9560 100644
+--- a/include/hardware/keymaster_defs.h
++++ b/include/hardware/keymaster_defs.h
+@@ -125,26 +125,26 @@ typedef enum {
+                                                  defined in hw_auth_token_t in hw_auth_token.h. */
+     KM_TAG_MAC_LENGTH = KM_UINT | 1003,       /* MAC or AEAD authentication tag length in bits. */
+ 
+-    /* Tags used only for SOTER */
+-    /* Tags used only to check if the key is for SOTER */
+-    KM_TAG_SOTER_IS_FROM_SOTER = KM_BOOL | 11000,
+-    /* Attach signature signed with ATTK[pri] while exporting public key */
+-    KM_TAG_SOTER_IS_AUTO_SIGNED_WITH_ATTK_WHEN_GET_PUBLIC_KEY = KM_BOOL | 11001,
+-    /* Attach signature signed with specified private key while exporting public key */
+-    KM_TAG_SOTER_IS_AUTO_SIGNED_WITH_COMMON_KEY_WHEN_GET_PUBLIC_KEY = KM_BOOL | 11002,
+-    /* keyalias for the keypair of KM_TAG_SOTER_IS_AUTO_SIGNED_WITH_COMMON_KEY_WHEN_GET_PUBLIC_KEY */
+-    KM_TAG_SOTER_AUTO_SIGNED_COMMON_KEY_WHEN_GET_PUBLIC_KEY = KM_BYTES | 11003,
+-    /* Attach counter while exporting publick key */
+-    KM_TAG_SOTER_AUTO_ADD_COUNTER_WHEN_GET_PUBLIC_KEY = KM_BOOL | 11004,
+-    /* Attach secmsg(TEE_Name, TEE_Version, Fingerprint_Sensor_Name, Fingerprint_Sensor_Version)
+-       fingerprint_id and counter while signing */
+-    KM_TAG_SOTER_IS_SECMSG_FID_COUNTER_SIGNED_WHEN_SIGN = KM_BOOL | 11005,
+-    /* use and set ATTK index to next backup ATTK */
+-    KM_TAG_SOTER_USE_NEXT_ATTK = KM_BOOL | 11006,
+-    /* attach soter uid */
+-    KM_TAG_SOTER_UID = KM_UINT | 11007,
+-    /* attach key blob of KM_TAG_SOTER_AUTO_SIGNED_COMMON_KEY_WHEN_GET_PUBLIC_KEY if needed */
+-    KM_TAG_SOTER_AUTO_SIGNED_COMMON_KEY_WHEN_GET_PUBLIC_KEY_BLOB = KM_BYTES | 11008,
++	/* Tags used only for SOTER */
++	/* Tags used only to check if the key is for SOTER */
++	KM_TAG_SOTER_IS_FROM_SOTER = KM_BOOL | 11000,
++	/* Attach signature signed with ATTK[pri] while exporting public key */
++	KM_TAG_SOTER_IS_AUTO_SIGNED_WITH_ATTK_WHEN_GET_PUBLIC_KEY = KM_BOOL | 11001,
++	/* Attach signature signed with specified private key while exporting public key */
++	KM_TAG_SOTER_IS_AUTO_SIGNED_WITH_COMMON_KEY_WHEN_GET_PUBLIC_KEY = KM_BOOL | 11002,
++	/* keyalias for the keypair of KM_TAG_SOTER_IS_AUTO_SIGNED_WITH_COMMON_KEY_WHEN_GET_PUBLIC_KEY */
++	KM_TAG_SOTER_AUTO_SIGNED_COMMON_KEY_WHEN_GET_PUBLIC_KEY = KM_BYTES | 11003,
++	/* Attach counter while exporting publick key */
++	KM_TAG_SOTER_AUTO_ADD_COUNTER_WHEN_GET_PUBLIC_KEY = KM_BOOL | 11004,
++	/* Attach secmsg(TEE_Name, TEE_Version, Fingerprint_Sensor_Name, Fingerprint_Sensor_Version)
++	   fingerprint_id and counter while signing */
++	KM_TAG_SOTER_IS_SECMSG_FID_COUNTER_SIGNED_WHEN_SIGN = KM_BOOL | 11005,
++	/* use and set ATTK index to next backup ATTK */
++	KM_TAG_SOTER_USE_NEXT_ATTK = KM_BOOL | 11006,
++	/* attach soter uid */
++	KM_TAG_SOTER_UID = KM_UINT | 11007,
++	/* attach key blob of KM_TAG_SOTER_AUTO_SIGNED_COMMON_KEY_WHEN_GET_PUBLIC_KEY if needed */
++	KM_TAG_SOTER_AUTO_SIGNED_COMMON_KEY_WHEN_GET_PUBLIC_KEY_BLOB = KM_BYTES | 11008,
+ } keymaster_tag_t;
+ 
+ /**
+diff --git a/modules/sensors/multihal.cpp b/modules/sensors/multihal.cpp
+index 48f2be3..8330ff3 100644
+--- a/modules/sensors/multihal.cpp
++++ b/modules/sensors/multihal.cpp
+@@ -490,14 +490,14 @@ static void lazy_init_modules() {
+         pthread_mutex_unlock(&init_modules_mutex);
+         return;
+     }
+-    std::vector<std::string> so_paths;
+-    get_so_paths(&so_paths);
++    std::vector<std::string> *so_paths = new std::vector<std::string>();
++    get_so_paths(so_paths);
+ 
+     // dlopen the module files and cache their module symbols in sub_hw_modules
+     sub_hw_modules = new std::vector<hw_module_t *>();
+     dlerror(); // clear any old errors
+     const char* sym = HAL_MODULE_INFO_SYM_AS_STR;
+-    for (std::vector<std::string>::iterator it = so_paths.begin(); it != so_paths.end(); it++) {
++    for (std::vector<std::string>::iterator it = so_paths->begin(); it != so_paths->end(); it++) {
+         const char* path = it->c_str();
+         void* lib_handle = dlopen(path, RTLD_LAZY);
+         if (lib_handle == NULL) {
+-- 
+2.7.4
+
