@@ -1,8 +1,5 @@
 #!/bin/bash
 cd ../../../..
-cd external/sepolicy
-git apply -v ../../device/Lenovo/A3300/patches/external_sepolicy.patch
-cd ../..
 cd frameworks/native
 git apply -v ../../device/Lenovo/A3300/patches/frameworks_native.patch
 cd ../..
