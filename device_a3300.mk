@@ -124,9 +124,8 @@ PRODUCT_PACKAGES += \
     libnl_2 \
     libtinyxml
 
-# Camera
-PRODUCT_PACKAGES += \
-    Snap
+# Gello browser
+PRODUCT_PACKAGES += Gello
 
 PRODUCT_COPY_FILES += \
 	$(LOCAL_PATH)/configs/media_codecs.xml:system/etc/media_codecs.xml \
