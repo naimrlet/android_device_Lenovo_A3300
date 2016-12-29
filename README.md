@@ -8,7 +8,7 @@ GPU | Mali-400MP2
 Memory | 1GB
 Shipped Android Version | Android 4.2.2 (Upgradable to 4.4.2)
 Storage | 8GB
-MicroSD | Up to 64BG
+MicroSD | Up to 64GB
 Battery | 3500 mAh Li-Ion (Non-removable)
 Dimension | 198 x 119.8 x 10.5 mm
 Display | 600 x 1024 pixels, 7.0"
